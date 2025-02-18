@@ -130,7 +130,7 @@ def build_args(dataset=None):
     parser.add_argument("--checkpoint", default=None, type=str)
     parser.add_argument("--start_epoch", default=0, type=int)
     parser.add_argument("--gpu", default='0', type=str)
-    parser.add_argument("--num_workers", '-j', default=4, type=int)
+    parser.add_argument("--num_workers", '-j', default=0, type=int)
     parser.add_argument("--batch_size", '-b', default=16, type=int)
     parser.add_argument("--eval_freq", default=5, type=int)
     parser.add_argument("--lr", default=None, type=float)

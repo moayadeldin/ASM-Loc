@@ -14,7 +14,7 @@ def dynamic_segment_sample(input_feature, sample_len, dynamic_segment_weights):
         sample_len = 2
         sample_idxs = np.rint(np.linspace(0, input_len-1, sample_len))
         dynamic_segment_weights_cumsum = np.concatenate((np.zeros((1,), dtype=float), np.array([0.5, 1.0], dtype=float)), axis=0)
-        return input_feature[sample_idxs.astype(np.int), :], dynamic_segment_weights_cumsum
+        return input_feature[sample_idxs.astype(int), :], dynamic_segment_weights_cumsum
     else:
         assert sample_len > 0, "WRONG SAMPLE_LEN {}, THIS PARAM MUST BE GREATER THAN 0.".format(sample_len)
         dynamic_segment_weights_cumsum = np.concatenate((np.zeros((1,), dtype=float), np.cumsum(dynamic_segment_weights)), axis=0)
@@ -38,7 +38,7 @@ def uniform_sample(input_feature, sample_len):
         sample_scale = input_len / sample_len
         sample_idxs = np.arange(sample_len) * sample_scale
         sample_idxs = np.floor(sample_idxs)
-    return input_feature[sample_idxs.astype(np.int), :]
+    return input_feature[sample_idxs.astype(int), :]
 
 def random_sample(input_feature, sample_len):
     input_len = input_feature.shape[0]
@@ -47,13 +47,13 @@ def random_sample(input_feature, sample_len):
     if input_len < sample_len:
         return temporal_interpolation(input_feature, sample_len)
     elif input_len > sample_len:
-        index_list = np.rint(np.linspace(0, input_len-1, sample_len+1)).astype(np.int)
+        index_list = np.rint(np.linspace(0, input_len-1, sample_len+1)).astype(int)
         sample_idxs = np.zeros(sample_len)
         for i in range(sample_len):
             sample_idxs[i] = np.random.choice(range(index_list[i], index_list[i+1]))
     else:
         sample_idxs = np.arange(input_len)
-    return input_feature[sample_idxs.astype(np.int), :]
+    return input_feature[sample_idxs.astype(int), :]
 
 class ASMLocDataset(Dataset):
     def __init__(self, args, phase="train", sample="random", step=None, logger=None):

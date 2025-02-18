@@ -234,7 +234,7 @@ def get_segment_iou(target_segment, candidate_segment):
     segment_intersection = (tt2 - tt1).clip(0)
     segment_union = (candidate_segment[:, 1] - candidate_segment[:, 0]) + \
                     (target_segment[1] - target_segment[0]) - segment_intersection
-    tIOU = segment_intersection.astype(np.float) / segment_union    
+    tIOU = segment_intersection.astype(np.float32) / segment_union    
     
     return tIOU
 
@@ -578,8 +578,8 @@ def compute_average_precision_detection(ground_truth, prediction, tiou_threshold
             if fp[tidx, idx] == 0 and tp[tidx, idx] == 0:
                 fp[tidx, idx] = 1 
                 
-    tp_cumsum = np.cumsum(tp, axis=1).astype(np.float)
-    fp_cumsum = np.cumsum(fp, axis=1).astype(np.float)
+    tp_cumsum = np.cumsum(tp, axis=1).astype(np.float32)
+    fp_cumsum = np.cumsum(fp, axis=1).astype(np.float32)
     
     recall_cumsum = tp_cumsum / npos
     precision_cumsum = tp_cumsum / (tp_cumsum + fp_cumsum)
