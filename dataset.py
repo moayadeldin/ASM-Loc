@@ -57,7 +57,9 @@ def random_sample(input_feature, sample_len):
 
 class ASMLocDataset(Dataset):
     def __init__(self, args, phase="train", sample="random", step=None, logger=None):
-        self.phase = phase 
+        
+        ### Initializing class variables ###
+        self.phase = phase
         self.sample = sample
         self.data_dir = args.data_dir 
         self.sample_segments_num = args.sample_segments_num
@@ -70,15 +72,20 @@ class ASMLocDataset(Dataset):
         self.dataset = args.dataset
         self.logger = logger
 
+        # load the ground truth from .jsom in gt_dict
         with open(os.path.join(self.data_dir, "gt.json")) as gt_f:
             self.gt_dict = json.load(gt_f)["database"]
         args.gt_dict = self.gt_dict
+        
+        # then he loads "pred_segment_path" in pseudo_segment_dict
         self.pseudo_segment_dict = {}
         self.pseudo_segment_dict['results'] = defaultdict(list)
         if not self.pred_segment_path is None:
             with open(self.pred_segment_path, 'r') as pred_f:
                 self.pseudo_segment_dict = json.load(pred_f)
-
+                
+        
+        # then he loads the videos names in a list named data_list depending on the phase (train/test/full)
         if 'train' in self.phase:
             self.feature_dir = os.path.join(self.data_dir, "train")
             self.data_list = list(open(os.path.join(self.data_dir, "split_train.txt")))
@@ -91,28 +98,38 @@ class ASMLocDataset(Dataset):
             self.feature_dir = self.data_dir
             self.data_list = list(open(os.path.join(self.data_dir, "split_test.txt"))) + list(open(os.path.join(self.data_dir, "split_train.txt")))
             self.data_list = [item.strip() for item in self.data_list]
-
+            
+        
+        # then he loads something "dynamic_segment_weight_path". I think this is related to the dynamic segment sampling mentioned in the paper.
         self.dynamic_segment_weight_path = os.path.join(args.save_dir, 'dynamic_segment_weights_pred_step{}'.format(step))
         
+        # get the class names
         self.class_name_lst = args.class_name_lst
+        # get the index of each class name
         self.action_class_idx_dict = {action_cls:idx for idx, action_cls in enumerate(self.class_name_lst)}
-        
+        # receive from args the number of classes (for THUMOS it's 20 excluding background)
         self.action_class_num = args.action_cls_num
         
         self.get_proposals(self.pseudo_segment_dict)
         
     def get_proposals(self, pseudo_segment_dict):
-        self.label_dict = {}
-        self.gt_action_dict = defaultdict(list)
-        self.pseudo_segment_dict = pseudo_segment_dict
+        self.label_dict = {} # stores binary multi-hot encoded labels for each video
+        self.gt_action_dict = defaultdict(list) # stores ground truth action segments for each video
+        self.pseudo_segment_dict = pseudo_segment_dict # holds pseudo-segment information
         for vid_name in self.data_list:
-            item_label = np.zeros(self.action_class_num)
-            for ann in self.gt_dict[vid_name]["annotations"]:
-                ann_label = ann["label"]
-                item_label[self.action_class_idx_dict[ann_label]] = 1.0
-                self.gt_action_dict[vid_name].append([ann['segment'][0], ann['segment'][1], 1.0, ann_label])
+            item_label = np.zeros(self.action_class_num) # Initialize an array with the same size of classes to store one-hot encoded labels for video
+            for ann in self.gt_dict[vid_name]["annotations"]: # iterate over the ground truth annotations for each video
+                ann_label = ann["label"] # get the action label
+                item_label[self.action_class_idx_dict[ann_label]] = 1.0 # for the action label you got, assign it in the one-hot encoded array with 1 according to the corresponding index.
+                
+                # Now for the ground truth action segments, extract the start and end times 
+                self.gt_action_dict[vid_name].append([ann['segment'][0], ann['segment'][1], 1.0, ann_label]) 
+            
+            # for each video we do the multi one-hot encoded label GT extraction and put them in label dictionary
             self.label_dict[vid_name] = item_label
-
+            
+        
+        ### Here he collects the set of possible actions ###
         self.pseudo_segment_dict_att = defaultdict(list)
         self.pseudo_segment_dict_pseudo = defaultdict(list)
         self.pseudo_segment_dict_all = defaultdict(list)
@@ -132,7 +149,8 @@ class ASMLocDataset(Dataset):
                 elif self.gt_dict[vid_name]['subset'] == 'val':
                     for pred in self.pseudo_segment_dict['results'][vid_name]:
                         label_set.add(pred['label'])
-
+                        
+        ### He collects the temporal predictions for all videos if the prediction of the predicted class is true ###
             prediction_list_all = []
             for label in label_set:
                 prediction_list = []
@@ -162,8 +180,10 @@ class ASMLocDataset(Dataset):
                     prev_segment = prediction_list_att.pop(-1)
                     cur_segment = prediction_list_nodup.pop(-1)
                     if prev_segment[1] >= cur_segment[1]:
+                        # compares the end timestamp of both segments, if prev_segment ends after or at the same time as cur_segment then there is overlap
                         prediction_list_att.append(prev_segment)
                     else:
+                        # otherwise keep as it is
                         prediction_list_att.append(prev_segment)
                         prediction_list_att.append(cur_segment)
             self.pseudo_segment_dict_att[vid_name] = prediction_list_att
@@ -188,7 +208,7 @@ class ASMLocDataset(Dataset):
         else:
             con_vid_feature = np.load(os.path.join(self.feature_dir, vid_name+".npy"))
         
-        vid_len = con_vid_feature.shape[0]
+        vid_len = con_vid_feature.shape[0] # When we say the dimension vector is T x D then this is T, D = 2048
         
         dynamic_segment_weights_cumsum = None
         if self.sample == "random":
@@ -207,9 +227,10 @@ class ASMLocDataset(Dataset):
         input_feature = torch.as_tensor(input_feature.astype(np.float32)) 
         vid_label = torch.as_tensor(vid_label.astype(np.float32))
         
-        output_len = input_feature.shape[0]
-        proposal_bbox = torch.zeros((self.max_segments_num, 2), dtype=torch.int32)
-        pseudo_instance_label = torch.zeros((output_len, self.action_cls_num+1), dtype=torch.float32)
+        output_len = input_feature.shape[0] # This is T
+        # Initialize proposal boxes array and pseudo instances label array.
+        proposal_bbox = torch.zeros((self.max_segments_num, 2), dtype=torch.int32) # max_segments_num = 100
+        pseudo_instance_label = torch.zeros((output_len, self.action_cls_num+1), dtype=torch.float32) # Shape: T x C + 1
         # init all the timestep with bg class = 1
         pseudo_instance_label[:, -1] = 1
 
@@ -244,12 +265,21 @@ class ASMLocDataset(Dataset):
             proposal_bbox[k, 1] = segment[1]
 
         ########## generate pseudo_instance_label from pseudo_segment_all for Pseudo Instance-level Loss ##########
+        
+        """
+        Filters out invalid labels, and apply DSS if chosen, and normalize the pseudo labels before return the processed video data.
+        """
+        
+        # extract the ground truths of the foreground in videos
+        # np.where(...=1)[0] extracts indices of foreground classes present in the video
+        
+        
         fg_label_set_gt = np.where(self.label_dict[vid_name] == 1)[0]
-        for segment in self.pseudo_segment_dict_all[vid_name]:
+        for segment in self.pseudo_segment_dict_all[vid_name]: # extract the predictions
             t_start = segment[0]
             t_end = segment[1]
             t_label = self.action_class_idx_dict[segment[3]]
-            if not t_label in fg_label_set_gt:
+            if not t_label in fg_label_set_gt: # if t_label is not in the foreground ground truth ignore
                 continue
             if dynamic_segment_weights_cumsum is not None:
                 t_start = (f_upsample(t_start * time_to_index_factor + 1) - 1) / time_to_index_factor
@@ -258,10 +288,31 @@ class ASMLocDataset(Dataset):
             index_end = min(int(round(t_end * upsample_scale)), output_len-1)
             pseudo_instance_label[index_start:index_end+1, t_label] = 1
             pseudo_instance_label[index_start:index_end+1, -1] = 0
-        pseudo_instance_label = pseudo_instance_label / torch.sum(pseudo_instance_label, dim=-1, keepdim=True).clamp(min=1e-6)
+            
+        # apply normalization to the pseudo ground truth
+        pseudo_instance_label = pseudo_instance_label / torch.sum (pseudo_instance_label, dim=-1, keepdim=True).clamp(min=1e-6)
         return vid_name, input_feature, vid_label, vid_len, proposal_bbox, proposal_count_by_video, pseudo_instance_label, dynamic_segment_weights_cumsum
 
 def my_collate_fn(batch):
+    """
+    Before:
+    
+    batch = [
+    (torch.tensor([1, 2, 3]), "label1"),  
+    (torch.tensor([4, 5, 6]), "label2"),  
+    (torch.tensor([7, 8, 9]), "label3")
+    ]
+    
+    After:
+    
+    [
+        tensor([[1, 2, 3],  
+            [4, 5, 6],  
+            [7, 8, 9]]),  # Batched tensor (stacked along dim=0)
+    ["label1", "label2", "label3"]  # Labels collected into a list
+    ]
+
+    """
     batched_output_list = []
     for i in range(len(batch[0])):
         if torch.is_tensor(batch[0][i]):
